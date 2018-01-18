@@ -1,0 +1,1 @@
+../../../awk/reg2wesn.awk

@@ -1,0 +1,637 @@
+#!/bin/bash
+#
+# convert one or several GMT/netcdf grd files given as geographic
+# coordinates to vtk format 
+#
+# major modes:
+# 2D:
+# single grid file providing a global or regional map: projected to certain layer, and scalar is shown as height
+#
+# 3D:
+#
+# multiple global grid files: interpolated into triangle strips and a 3-D spherical model is created
+#
+# multiple regional grid files: irregular hexahedron grip is generated
+#
+# several grid files also require a file called $dfile with depth layers, sorted bottom up, counting 
+# depth (in km for earth) positive (e.g. 2800 2000 1000 500 0 for five layers in the mantle, bottom up)
+#
+# 
+#
+#
+# thorsten becker, twb@usc.edu
+#
+# $Id: grd2vtk,v 1.1 2008/04/28 17:07:26 becker Exp becker $
+#
+# see README for usage and install
+#
+# single input file name, or several, listed from bottom to top
+# 
+grd=${1-tmp}			# filename tmp.grd, or tmp.i.grd for 3-D
+topo=${2-0}			# 0: no topo 1: topo 2: topo, select > 0 values only 3: topo, select continental area only
+threed=${3-0}			# do we have several files?
+default_z=${4-0}			# def ault depth for a single layer, 0 = surface
+pcore=${5-0}			        # 0: don't move 1: project to core 2: move to 1000 km 3: shift to 6371km
+                                        # 4: project to core and scale to meters
+sorder=${6-7}			# sphere point order for interpolation, use 8 for velocity
+tex=${7-25}			# vertical exagerration for top
+rbl=${8-0}			# remove boundary layers, if > 0: remove all above rbl if < 0: remove all below rbl
+use_rms_for_norm=${9-0}		# use the RMS value at each depth to normalized the grids
+add_vel=${10-0} # additionally look for vp.i.grd vt.i.grd vr.i.grd velocities
+dfile=${11-vdepth.dat} 		# file with depths
+topo_scalar_grd=${12-xxx}	# use a different scalar field on top of the topography to color, this should be .grd file
+                                # without the .grd ending
+# output format
+ascii=0	                # 1: use ASCII format
+#
+#
+replace_nan=0			# replace NaN with maximum of dataset
+
+
+
+tmpn=/tmp/$USER.$HOST.$$.grd2vtk
+trap "rm -f $tmpn.* ; exit" 0 1 2 15
+
+
+
+if [[ $topo -eq 2 || $topo -eq 3 ]];then
+    if [ $threed -eq 1 ];then
+	echo $0: topo 2 or 3 modes with 3D not implemented yet > /dev/stderr
+	exit
+    fi
+fi
+
+
+
+if [ $threed -eq 0 ];then	# 2D mode
+    # 
+    #  single layer projected on sphere
+    # 
+    echo $0: single layer mode > /dev/stderr
+    if [ ! -s $grd.grd ];then
+	echo $0: $grd.grd not found > /dev/stderr
+	exit
+    fi
+    reg=`grd2reg $grd.grd`	# region
+    inc=`grd2inc $grd.grd`	# sampling
+    is_global=`grd2global $grd.grd` # regional/global?
+
+    echo $reg $inc is global $is_global > /dev/stderr
+
+    if [ $replace_nan -eq 1 ];then
+	echo $0: replacing NaN by maximum > /dev/stderr
+    # replace NaN by max
+	smax=`grd2max $grd.grd`
+	grd2xyz $grd.grd | gawk '{if(tolower($3)=="nan")print($1,$2,m);else print($1,$2,$3)}' m=$smax | \
+	    xyz2grd $inc $reg -G$tmpn.grd
+    else
+	cp $grd.grd $tmpn.grd
+    fi
+    nl=1;nlu=1			# 
+    
+    if [ $use_rms_for_norm -eq 1 ];then
+
+	rms=`grd2wrms $tmpn.grd`
+	echo $0: normalizing by RMS $rms > /dev/stderr
+	grdmath $tmpn.grd $rms DIV = $tmpn.2.grd
+	mv $tmpn.2.grd $tmpn.grd
+    fi
+    if [ $add_vel -eq 1 ];then
+	echo $0: error, velocities only work for 3D mode > /dev/stderr
+    fi
+    if [ $is_global -eq 1 ];then
+        # global interpolation file for triangle strips
+	
+	# those files are generated  by
+	# sphere -i -c $sorder | gawk -f xyz2lonlat.awk | gawk '{printf("%.8e %.8e\n",$1,$2)}' | gzip -c 
+	#if [ ! -s $datadir/sphere_points/points.$sorder.lonlat.gz ];then
+	 #   echo $0: error, sphere coordinate file not found, see $0 on how to generate > /dev/stderr
+	  #  exit
+	#fi
+	#zcat $datadir/sphere_points/points.$sorder.lonlat.gz > $tmpn.lonlat
+	sphere -i -c $sorder | gawk -f xyz2lonlat.awk | gawk '{printf("%.8e %.8e\n",$1,$2)}' > $tmpn.lonlat
+	if [ $topo -eq 2 ];then
+	    # select those with values > 0 only
+	    echo $0: only positive topo, starting out with `lc $tmpn.lonlat` points > /dev/stderr
+	    grdtrack -Ql $tmpn.lonlat -G$tmpn.grd -fg | \
+		gawk '{n++;if(n==4){j=0;for(i=1;i<=3;i++)if(z[i]>0)j++;if(j>1)for(i=1;i<=3;i++)print(x[i],y[i],z[i]);n=1;}x[n]=$1;y[n]=$2;z[n]=$3;}END{for(i=1;i<=3;i++)if(z[i]>0)j++;if(j>1)for(i=1;i<=3;i++)print(x[i],y[i],z[i])}' > $tmpn.dat
+	    mv $tmpn.dat $tmpn.lonlat
+	    echo $0: selected `lc $tmpn.lonlat` points, need at least two nodes positive > /dev/stderr
+	elif [ $topo -eq 3 ];then # only continent
+	    echo $0: only continental topo, starting out with `lc $tmpn.lonlat` points > /dev/stderr
+	    grdtrack -Ql  $tmpn.lonlat -G$datadir/crust/3smac_derived/continent.0.25.grd -fg -Z | gawk '{if($1>.5)print(1);else print(0)}' > $tmpn.cont
+	    grdtrack -Ql  $tmpn.lonlat -G$tmpn.grd -fg  > $tmpn.tt 
+	    paste $tmpn.tt $tmpn.cont | \
+		gawk '{n++;if(n==4){j=0;for(i=1;i<=3;i++)if(c[i])j++;if(j>1)for(i=1;i<=3;i++)print(x[i],y[i],z[i]);n=1;}x[n]=$1;y[n]=$2;z[n]=$3;c[n]=$4;}END{for(i=1;i<=3;i++)if(z[i]>0)j++;if(j>1)for(i=1;i<=3;i++)print(x[i],y[i],z[i])}' > $tmpn.dat
+	    
+	    mv $tmpn.dat $tmpn.lonlat
+	    echo $0: selected `lc $tmpn.lonlat` points, need at least two nodes positive > /dev/stderr
+	fi
+    # resample
+	grdtrack -Ql  $tmpn.lonlat -G$tmpn.grd -fg  > $tmpn.1.lonlatz
+	echo $0: found `grep NaN $tmpn.1.lonlatz | lc` NaN entries
+    else			# regional mode
+	grd2xyz $tmpn.grd > $tmpn.1.lonlatz
+    fi
+    echo $default_z >> $tmpn.z 
+else
+    #
+    # 3-D mode
+    # 
+    if [[ $pcore -ne 0 || $topo -ne 0 ]];then
+	echo $0: threed and topo or pcore does not make sense > /dev/stderr
+	exit
+    fi
+    if [ ! -s $dfile ];then
+	echo $0: $dfile with depth bottom up not found > /dev/stderr
+	exit
+    fi
+    reg=`grd2reg $grd.1.grd`
+    is_global=`grd2global $grd.1.grd`
+    if [ $is_global -eq 1 ];then
+	echo $0: detected global grids, interpolating on triangle strips > /dev/stderr
+    else
+	echo $0: regional grids detected > /dev/stderr
+    fi
+    #
+    # original layer number
+    #
+    nl=`lc $dfile`		# number of input layers
+    #
+    rm $tmpn.z 2> /dev/null
+    
+    i=1;j=1
+    while [ $i -le $nl ];do
+	z=`oneline $i $dfile | gawk '{print(sqrt($1*$1))}' `
+	if [ $rbl -ne 0 ];then
+	# resample
+	    if [ $rbl -gt 0 ];then # remove top
+		use=`echo $z | gawk '{if($1 >= l)print(1);else print(0)}' l=$rbl `
+	    else		# remove bottom
+		use=`echo $z | gawk '{if($1 <= -l)print(1);else print(0)}' l=$rbl `
+	    fi
+	else
+	    use=1
+	fi
+	
+	if [ $use -eq 1 ];then
+	    if [ ! -s $tmpn.$i.lonlatz ];then
+		if [ $is_global -eq 1 ];then # global 
+		    #
+		    # check if interpolation files are there 
+		    #
+                    # those files are generated  by
+                    # sphere -i -c $sorder | gawk -f xyz2lonlat.awk | gawk '{printf("%.8e %.8e\n",$1,$2)}' | gzip -c 
+                    #
+		    if [ ! -s $datadir/sphere_points/points.$sorder.lonlat.gz ];then
+			echo $0: $datadir/sphere_points/points.$sorder.lonlat.gz not found, trying to generate > /dev/stderr
+			mkdir -p $datadir/sphere_points/
+			
+			sphere -i -c $sorder | gawk -f xyz2lonlat.awk | \
+			    gawk '{printf("%.8e %.8e\n",$1,$2)}' | gzip -c  > \
+			    $datadir/sphere_points/points.$sorder.lonlat.gz
+			if [ ! -s $datadir/sphere_points/points.$sorder.lonlat.gz ];then
+			    echo $0: error, sphere coordinate file could not be generated either, see $0 > /dev/stderr
+			    exit
+			else
+			    echo $0: apparantly generated $datadir/sphere_points/points.$sorder.lonlat.gz anew, OK > /dev/stderr
+			fi
+		    fi
+		    cp $datadir/sphere_points/points.$sorder.lonlat.gz $tmpn.lonlati.gz
+		else		# regional
+		    # generate a grid suited for VTK_HEXAHEDRON
+		    grdinfo -C $grd.1.grd | gawk '{w=$2;e=$3;s=$4;n=$5;dx=$8;dy=$9;\
+                                              for(x=w;x<e;x+=dx)for(y=s;y<n;y+=dy){
+                                              print(x,y);print(x+dx,y);print(x+dx,y+dy);print(x,y+dy)}}' | \
+						  gzip -c > $tmpn.lonlati.gz
+		    #echo $0: using `zcat $tmpn.lonlati.gz | lc ` regular nodes > /dev/stderr
+
+		fi
+		inn=`zcat $tmpn.lonlati.gz  | lc`
+		echo $0: working on layer $i for coordinates > /dev/stderr
+		if [ $use_rms_for_norm -eq 1 ];then
+		    rms=`grd2wrms $grd.$i.grd`
+		    echo $0: using RMS $rms for normalizing > /dev/stderr
+		    grdmath $grd.$i.grd $rms DIV = $tmpn.grd
+		    # CHANGE HERE
+		    zcat $tmpn.lonlati.gz | grdtrack -Ql -fg -G$tmpn.grd > $tmpn.$j.lonlatz
+		    rm $tmpn.grd
+		else
+		    zcat $tmpn.lonlati.gz | grdtrack -Ql -fg -G$grd.$i.grd > $tmpn.$j.lonlatz
+		fi
+
+		if [ $add_vel -eq 1 ];then
+		    for t in vp vt vr;do
+			if [ ! -s $t.$i.grd  ];then
+			    echo $0: error, $t.$i.grd  not found > /dev/stderr
+			    exit
+			fi
+#			echo $t.$i.grd 
+			zcat $tmpn.lonlati.gz | \
+			    gawk '{if($2==90)print($1,89.75);else if($2==-90)print($1,-89.75);else print($1,$2)}' | \
+			    grdtrack -Ql  -fg -G$t.$i.grd > $tmpn.$t
+			#tail  $tmpn.$t
+		    done
+		    n1=`lc $tmpn.vp`
+		    if [[ $n1 -ne `lc $tmpn.vr` || $n1 -ne `lc $tmpn.vt` ]];then
+			echo $0: error, mismatch for velocity components  > /dev/stderr
+			exit
+		    fi
+		    paste $tmpn.vr $tmpn.vt $tmpn.vp | gawk '{print($1,$2,$3,$6,$9)}' |  \
+			lonlatpv2cv  > $tmpn.$j.vc
+
+
+		    #paste $tmpn.vr $tmpn.vt $tmpn.vp | gawk -f togformat.awk | tail
+		    #echo
+		    #cat $tmpn.$j.vc | gawk -f lonlatcv2pv.awk | gawk -f togformat.awk | tail
+		    #exit
+		    outn=`lc $tmpn.$j.vc`
+		    if [ $inn -ne $outn ];then
+			echo $0: error for velocities: nin $inn nout $outn  > /dev/stderr
+			exit
+		    fi
+		    #cp $tmpn.$j.vc $HOME/tmp/vc.$j
+		fi
+	    else
+		echo $0: using old interpolations  > /dev/stderr
+	    fi
+	    echo depth $z done at layer $j
+	    echo $z >> $tmpn.z
+	    ((j=j+1))
+	else
+	    echo $0: not using $z level
+	fi
+	((i=i+1))
+    done
+#
+# actual number of used layers
+#
+    ((nlu=j-1))
+
+fi
+
+zmin=`tail -1 $tmpn.z`
+zmax=`head -1 $tmpn.z`
+
+rmin=`echo $zmin | gawk '{print(1-$1/6371)}'`
+
+
+#
+# generate some extra stuff for plotting
+#
+
+proj=-JH`echo $reg | gawk -f reg2midlon.awk`/7 
+if [ $is_global -eq 1 ];then
+    pscoast -m $reg  -Di -W1 $proj | \
+	gmtselect -m $reg | gawk -v r=$rmin '{print($1,$2,r)}' | \
+	gawk -f gmtpoly2vtk.awk  >  $grd.cl.vtk
+    
+else				# regional
+
+    # produce coast line
+    
+    pscoast -m $reg $proj   -Dh -A7000 -W1  > $tmpn.cl
+    if [ `lc $tmpn.cl` -gt 1 ];then
+	#gmtselect -fg -m $reg  $tmpn.cl | \
+	cat $tmpn.cl | \
+	    gawk -v r=$rmin '{if($1==">")print($0);else print($1,$2,r)}' | \
+	    gawk -f gmtpoly2vtk.awk  >  $grd.cl.vtk
+    fi
+    # national boundaries 
+    pscoast -m $reg $proj   -N1  > $tmpn.nb
+    if [ `lc $tmpn.nb` -gt 1 ];then
+	gmtselect -fg -m $reg -fg $tmpn.nb | gawk -v r=$rmin '{print($1,$2,r)}' | \
+	    gawk -f gmtpoly2vtk.awk  >  $grd.nb.vtk
+    fi
+
+    # convert to vtk box
+    echo $reg  | gawk -f reg2wesn.awk | \
+	gawk --assign z1=$zmin --assign z2=$zmax -v divide=1 -f reg2box.awk  | \
+	gawk -f gmtpoly2vtk.awk  >  $grd.box.vtk
+    echo $0: box in $grd.box.vtk  > /dev/stderr
+    # extract plate boundaries
+    gmtselect -m -fg $reg ~/data/plate_boundaries/bird_PB2002/PB2002_tdiddy.gmt | gawk -v r=$rmin '{if($1==">")print($0);else print($1,$2,r)}' | \
+	gawk -f gmtpoly2vtk.awk  >  $grd.birdpb.vtk
+fi
+echo $0: coastline file in $grd.cl.vtk  > /dev/stderr
+
+
+nn=`lc $tmpn.1.lonlatz`		# nodes per layer
+((nt=nn*nlu))			# total number of nodes
+
+if [ $nlu -eq 1 ];then
+    echo $0: using file $grd.grd, layers: $nlu out of $nl  > /dev/stderr
+else
+    echo $0: using files $grd.1.grd through $grd.$nl.grd, layers: $nlu out of $nl  > /dev/stderr
+fi
+echo $0: number of nodes: total: $nt per layer: $nn sorder: $sorder  > /dev/stderr
+
+#
+# determine the file name
+#
+if [ $use_rms_for_norm -eq 1 ];then
+    end=rmsdiv.vtk
+else
+    end=vtk
+fi
+if [ $rbl -eq 0 ];then
+    vvend=$end
+else
+    vvend=$rbl.$end
+fi
+if [ $topo -eq 2 ];then
+    vend=pos.$vvend
+elif [ $topo -eq 3 ];then
+    vend=cont.$vvend
+else
+    vend=$vvend
+fi
+
+if [ $sorder -gt 8 ];then 
+    suffix=h.$end
+else
+    suffix=$end
+fi
+if [ $pcore -eq 3 ];then
+    ofile=$grd.6371.$suffix
+elif [ $pcore -eq 2 ];then
+    ofile=$grd.1000.$suffix
+elif [ $pcore -eq 1 ];then
+    ofile=$grd.core.$suffix
+else
+    ofile=$grd.$suffix
+fi
+
+#echo "# vtk DataFile Version 3.0" > $ofile
+echo "# vtk DataFile Version 2.0" > $ofile
+echo "extracted from $grd.grd using $0 $*" >> $ofile
+if [ $ascii -eq 1 ];then
+    echo "ASCII" >> $ofile
+else
+    echo "BINARY" >> $ofile
+fi
+if [[ $nlu -eq 1 && $is_global -eq 1 ]];then		# single layer
+    echo DATASET POLYDATA >> $ofile
+else				# several layers
+    echo DATASET UNSTRUCTURED_GRID >> $ofile
+fi
+echo POINTS $nt float >> $ofile
+if [ $topo -ne 0 ];then		# single layer, topo, expect in [m]
+    if [ $pcore -eq 4 ];then
+	shift=2871;scale=6371e3
+    elif [ $pcore -eq 3 ];then
+	shift=0;scale=6371
+    elif [ $pcore -eq 2 ];then
+	shift=1000;scale=1
+    elif [ $pcore -eq 1 ];then
+	shift=2871;scale=1
+    else
+	shift=0;scale=1
+    fi
+    #
+    # nodal coordinates coordinates
+    #
+    gawk '{if($3!="NaN")print($1,$2,s-$3/1000*ex);else print($1,$2,$3)}' \
+	 ex=$tex s=$shift $tmpn.1.lonlatz > $tmpn.coord.lonlat_ex
+    minmax $tmpn.coord.lonlat_ex
+    echo $0: NaN after conversion `grep NaN $tmpn.coord.lonlat_ex | lc`
+    
+    gawk -v scale=$scale -f lonlatz2xyz.awk $tmpn.coord.lonlat_ex \
+	 > $tmpn.coord.lonlat_xyz
+    echo $0: ex $tex shift $shift scale $scale
+    minmax $tmpn.coord.lonlat_xyz
+    if [ $ascii -eq 1 ];then
+	cat $tmpn.coord.lonlat_xyz >> $ofile
+    else
+	cat $tmpn.coord.lonlat_xyz | asciifloat2bebin >> $ofile
+    fi
+    
+    nsum_nodes=`lc $tmpn.1.lonlatz`
+    echo >> $ofile
+    if [ $is_global -eq 1 ];then
+	((ne=nn/3))
+	((tne=ne*4))
+
+    #
+    # connectivity
+    #
+	echo TRIANGLE_STRIPS $ne $tne >> $ofile
+	if [ $ascii -eq 1 ];then
+	    gawk -v ne=$ne 'BEGIN{for(i=0;i<ne;i++)print(3,i*3,i*3+1,i*3+2)}' >> $ofile
+	else
+	    gawk -v ne=$ne 'BEGIN{for(i=0;i<ne;i++)print(3,i*3,i*3+1,i*3+2)}' | \
+		asciiint2bebin >> $ofile
+	fi
+    else			# regional
+
+	grdinfo -C $tmpn.grd | gawk '{nx=$10;ny=$11;nxm1=nx-1;
+                  for(i=1;i<ny;i++)for(j=0;j<nxm1;j++)\
+                   print(4,i*nx+j,i*nx+1+j,(i-1)*nx+1+j,(i-1)*nx+j)}' > $tmpn.con
+	ne=`lc $tmpn.con`
+	((tne=ne*5))
+	echo CELLS $ne $tne >> $ofile
+	if [ $ascii -eq 1 ];then
+	    cat $tmpn.con >> $ofile
+	else
+	    cat $tmpn.con | asciiint2bebin >> $ofile
+	fi
+	echo >> $ofile
+	echo "CELL_TYPES $ne" >> $ofile
+	#
+	#
+	if [ $ascii -eq 1 ];then
+	    gawk --assign tele=$ne \
+		'BEGIN{for(i=1;i<=tele;i++){printf("%i ",9);if(i%40==0)printf("\n");};printf("\n");}'  >> $ofile
+	else
+	    gawk --assign tele=$ne \
+		'BEGIN{for(i=1;i<=tele;i++){printf("%i ",9);if(i%40==0)printf("\n");};printf("\n");}' | \
+		asciiint2bebin >> $ofile
+	fi
+    fi
+ else				# no topo
+     
+    i=1;nsum=0
+    while [ $i -le $nlu ];do
+	if [ $threed -eq 1 ];then
+	    z=`oneline $i $tmpn.z`
+	else
+	    z=$default_z
+	fi
+	if [ $ascii -eq 1 ];then
+	    gawk '{print($1,$2,z)}' z=$z $tmpn.$i.lonlatz |\
+		gawk -f lonlatz2xyz.awk >> $ofile
+	else
+	    gawk '{print($1,$2,z)}' z=$z $tmpn.$i.lonlatz |\
+		gawk -f lonlatz2xyz.awk | \
+		asciifloat2bebin >> $ofile
+	fi
+	ntmp=`lc $tmpn.$i.lonlatz`
+	echo $0: node set $i $ntmp
+	((nsum=nsum+ntmp))
+	((i=i+1))
+    done
+    nsum_nodes=$nsum
+    echo $0: total nodes: $nsum_nodes
+    
+    if [ $nlu -eq 1 ];then
+	# 
+	# connectivity one global layer
+	# 
+	if [ $is_global -eq 1 ];then
+	    ((ne=nn/3))		# number of elements
+	    ((tne=ne*4))
+	    echo TRIANGLE_STRIPS $ne $tne >> $ofile
+	    if [ $ascii -eq 1 ];then
+		gawk -v ne=$ne 'BEGIN{for(i=0;i<ne;i++)print(3,i*3,i*3+1,i*3+2)}' >> $ofile
+	    else
+		gawk -v ne=$ne 'BEGIN{for(i=0;i<ne;i++)print(3,i*3,i*3+1,i*3+2)}' | \
+		    asciiint2bebin >> $ofile
+	    fi
+	else			# regional
+	    grdinfo -C $tmpn.grd | gawk '{nx=$10;ny=$11;nxm1=nx-1;
+                  for(i=1;i<ny;i++)for(j=0;j<nxm1;j++)\
+                   print(4,i*nx+j,i*nx+1+j,(i-1)*nx+1+j,(i-1)*nx+j)}' > $tmpn.con
+	    ne=`lc $tmpn.con`
+	    ((tne=ne*5))
+	    echo CELLS $ne $tne >> $ofile
+	    if [ $ascii -eq 1 ];then
+		cat $tmpn.con >> $ofile
+	    else
+		cat $tmpn.con | asciiint2bebin >> $ofile
+	    fi
+	    echo >> $ofile
+	    echo "CELL_TYPES $ne" >> $ofile
+	#
+	#
+	    if [ $ascii -eq 1 ];then
+		gawk --assign tele=$ne \
+		    'BEGIN{for(i=1;i<=tele;i++){printf("%i ",9);if(i%40==0)printf("\n");};printf("\n");}'  >> $ofile
+	    else
+		gawk --assign tele=$ne \
+		    'BEGIN{for(i=1;i<=tele;i++){printf("%i ",9);if(i%40==0)printf("\n");};printf("\n");}' | \
+		    asciiint2bebin >> $ofile
+	    fi
+
+	fi
+    else
+	# 
+	# connectivity several layers
+	# 
+
+	if [ $is_global -eq 1 ];then
+	    nper_ele_2d=3		# triangles
+	    ele_type=13		# wedge type
+	else
+	    nper_ele_2d=4		# quads
+	    ele_type=12		# hexahedron
+	fi
+	((nn_per_ele=nper_ele_2d*2+1)) # number of int that needs listing
+
+	((ne=nn/nper_ele_2d))		# number of elements per layer
+	((tne=ne*(nlu-1)))	# total number of elements
+	
+	((tnele=tne*nn_per_ele))		
+
+	echo >> $ofile
+	echo $0: number of elements: per layer: $ne total: $tne 
+	echo CELLS $tne $tnele >> $ofile
+	# 
+	# connectivity list
+	# 
+	gawk -v ne=$ne -v nn=$nn  -v nl=$nlu -v n2d=$nper_ele_2d \
+               'BEGIN{k=0;for(j=1;j<nl;j++){for(i=0;i<ne;i++){
+                    printf("%i ",2*n2d);
+                    for(l=0;l < n2d;l++)
+                      printf("%i ",k+i*n2d+l)
+                    for(l=0;l < n2d;l++)
+                      printf("%i ",k+i*n2d+l+nn)
+                    printf("\n");
+                    }
+                    k+=nn;}}' > $tmpn.conn
+	if [ $ascii -eq 1 ];then
+	    cat $tmpn.conn >> $ofile
+	else
+	    cat $tmpn.conn | asciiint2bebin >> $ofile
+	fi
+	rm $tmpn.conn
+	echo >> $ofile
+	echo "CELL_TYPES $tne" >> $ofile
+	#
+	#
+	if [ $ascii -eq 1 ];then
+	    gawk --assign tele=$tne -v et=$ele_type \
+		'BEGIN{for(i=1;i<=tele;i++){printf("%i ",et);if(i%40==0)printf("\n");};printf("\n");}'  >> $ofile
+	else
+	    gawk --assign tele=$tne  -v et=$ele_type \
+		'BEGIN{for(i=1;i<=tele;i++){printf("%i ",et);if(i%40==0)printf("\n");};printf("\n");}' | \
+		asciiint2bebin >> $ofile
+	fi
+    fi
+fi
+echo >> $ofile
+echo POINT_DATA $nt >> $ofile
+#
+# scalar data
+#
+if [[ $topo -ne 0 && -s $topo_scalar_grd.grd ]];then
+    
+    echo $0: using $topo_scalar_grd.grd for topo
+    nlu=1
+    gawk '{print($1,$2)}' $tmpn.1.lonlatz | \
+	grdtrack -Ql -G$topo_scalar_grd.grd -fg  > $tmpn.tmp
+    mv $tmpn.tmp $tmpn.1.lonlatz
+    echo SCALARS $topo_scalar_grd float 1 >> $ofile
+else
+    echo SCALARS $grd float 1 >> $ofile
+fi
+echo LOOKUP_TABLE default >> $ofile
+i=1;nsum=0;
+while [ $i -le $nlu ];do
+    ntmp=`lc $tmpn.$i.lonlatz`
+    #echo $0: scalar set $i $ntmp
+    ((nsum=nsum+ntmp))
+    if [ $ascii -eq 1 ];then
+	gawk '{if($3=="NaN")printf("NaN ");else printf("%g ",$3);if(NR%20==0)printf("\n");}END{printf("\n")}' $tmpn.$i.lonlatz >> $ofile
+    else
+	gawk '{if($3=="NaN")printf("NaN ");else printf("%g ",$3);if(NR%20==0)printf("\n");}END{printf("\n")}' $tmpn.$i.lonlatz |\
+	    asciifloat2bebin >> $ofile
+    fi
+    ((i=i+1))
+done
+nsum_scalar=$nsum
+echo $0: total scalars $nsum_scalar
+if [ $nsum_scalar -ne $nsum_nodes ];then
+    echo $0: error, node number mismatch
+    exit
+fi
+
+if [ $add_vel -eq 1 ];then
+    echo VECTORS velocity float >> $ofile
+    nsum=0;
+    i=1
+    while [ $i -le $nlu ];do
+
+	if [ $ascii -eq 1 ];then
+	    gawk '{printf("%g %g %g ",$3,$4,$5);if(NR%7==0)printf("\n");}END{printf("\n")}' $tmpn.$i.vc >> $ofile
+	else
+	    gawk '{printf("%g %g %g ",$3,$4,$5);if(NR%7==0)printf("\n");}END{printf("\n")}' $tmpn.$i.vc | \
+		asciifloat2bebin >> $ofile
+	fi
+	ntmp=`lc $tmpn.$i.vc `
+	((nsum=nsum+ntmp))
+	echo $0: velocities set $i $ntmp
+	((i=i+1))
+    done
+    nsum_vel=$nsum
+    echo $0: total velocities $nsum_vel
+    if [ $nsum_vel -ne $nsum_nodes ];then
+	echo $0: error, node number mismatch
+	exit
+    fi
+fi
+
+
+
+
+rm $tmpn.*.lonlatz $tmpn.z 2> /dev/null
+echo $0: output in $ofile

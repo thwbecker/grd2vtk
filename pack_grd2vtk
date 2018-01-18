@@ -1,0 +1,25 @@
+#!/bin/bash
+
+odir=$HOME/tmp/grd2vtk
+
+mkdir -p $odir
+cp grd2vtk grd2vtk_cart grd2reg grd2inc oneline grd2nx grd2global \
+   grd2ny grd2max grd2absmax lc sphere.c lonlatz2xyz.awk \
+   reg2midlon.awk reg2box.awk *vtk*.awk reg2wesn.awk asciifloat2bebin.c \
+   asciiint2bebin.c bo.h flip_byte_order.c xyz2lonlat.awk $odir/
+
+cp makefile $odir/
+cp README LICENSE $odir/
+
+cp README $HOME/public_html/software/grd2vtk_README
+
+cd $HOME/tmp/
+
+tar --create --verbose --gzip --file grd2vtk.tgz grd2vtk/
+
+mv grd2vtk.tgz $HOME/public_html/software/
+
+cd -
+
+rm -fr $odir
+

@@ -1,0 +1,119 @@
+#!/bin/bash
+#
+# if 3D is set: 
+# given a set of equal geometry grd files describing a 3D scalar in
+# cartesian, create a rectilinear vtk file. 
+#
+# else, just one layer
+# 
+#
+name=${1-tmp}			# tmp.1.grd tmp.2.grd ....
+dfile=${2-tmp.depths}		# z_1 < z_2 < ... 
+is_3d=${3-1}			# 0: one layer at zlevel
+z_level=${4-1}			# project layer to that depth
+ascii=${5-0}
+extrude=${6-0}			# make exagerrated (by factor extrude) extrusion topography surface of a single layer
+
+if [ $is_3d -eq 1 ];then
+    master_file=$name.1
+    if [ ! -s $dfile ];then
+	echo $0: $dfile for depths not found
+	exit
+    fi
+    nz=`lc $dfile`
+    if [ `echo $extrude | gawk '{if($1!=0)print(1);else print(0)}'` -ne 0 ];then
+	echo $0: error, extrude $extrude only works for single layer
+	exit
+    fi
+else
+    master_file=$name
+    nz=1
+fi
+
+if [ ! -s $master_file.grd ];then
+    echo $0: $master_file.grd not found
+    exit
+fi
+nx=`grd2nx $master_file.grd`
+ny=`grd2ny $master_file.grd`
+
+reg=`grd2reg $master_file.grd`
+inc=`grd2inc $master_file.grd`
+
+
+((n=nx*ny*nz))
+
+echo "# vtk DataFile Version 2.0"
+echo converted from $name $dfile
+if [ $ascii -eq 1 ];then
+    echo ASCII
+else
+    echo BINARY
+fi
+if [ `echo $extrude | gawk '{if($1!=0)print(1);else print(0)}'` -eq 0 ];then
+    echo DATASET RECTILINEAR_GRID
+    echo DIMENSIONS $nx $ny $nz
+    echo X_COORDINATES $nx float
+    if [ $ascii -eq 1 ];then
+	grd2xyz $master_file.grd | gawk '{print($1)}' | sort -n | \
+	    uniq | gawk '{printf("%.7e ",$1)}END{printf("\n")}'
+    else
+	grd2xyz $master_file.grd | gawk '{print($1)}' | sort -n | \
+	    uniq | gawk '{print($1)}' | asciifloat2bebin 2> /dev/null
+    fi
+    echo Y_COORDINATES $ny float
+    if [ $ascii -eq 1 ];then
+	grd2xyz $master_file.grd | gawk '{print($2)}' | sort -n | uniq | gawk '{printf("%.7e ",$1)}END{printf("\n")}'
+    else
+	grd2xyz $master_file.grd | gawk '{print($2)}' | sort -n | uniq | gawk '{print($1)}' | asciifloat2bebin 2> /dev/null
+    fi
+    echo Z_COORDINATES $nz float 
+    if [ $is_3d -eq 1 ];then
+	if [ $ascii -eq 1 ];then
+	    gawk '{print($1)}' $dfile | gawk '{printf("%.7e ",$1)}END{printf("\n")}'
+	else
+	    gawk '{print($1)}' $dfile | gawk '{print($1)}' | asciifloat2bebin 2> /dev/null
+	fi
+    else
+	if [ $ascii -eq 1 ];then
+	    echo $z_level | gawk '{printf("%.7e ",$1)}END{printf("\n")}'
+	else
+	    echo $z_level | gawk '{print($1)}' | asciifloat2bebin 2> /dev/null
+	fi
+    fi
+    echo POINT_DATA  $n
+    echo SCALARS scalar float 1
+    echo LOOKUP_TABLE default
+    i=1
+    while [ $i -le $nz ];do
+	if [ $is_3d -eq 1 ];then
+	    file=$name.$i.grd
+	else
+	    file=$master_file.grd
+	fi
+	if [ $ascii -eq 1 ];then
+	    grd2xyz -ZBLa $file | gawk '{printf("%.7e ",$1);n++;if(n==20){printf("\n");n=0;}}END{printf("\n")}'
+	else
+	    grd2xyz -ZBLa $file | gawk '{print($1)}' | asciifloat2bebin 2> /dev/null
+	fi
+	((i=i+1))
+    done
+else				# extruded single layer 
+    echo DATASET STRUCTURED_GRID
+    echo DIMENSIONS $nx $ny $nz
+    echo POINTS  $n float
+    mean=`grd2mean $master_file.grd`
+    grdmath  $master_file.grd $mean SUB = tmp.$$.grd
+    if [ $ascii -eq 1 ];then
+	grd2xyz tmp.$$.grd | \
+	    gawk -v zl=$z_level -v scale=$extrude '{print($1,$2,zl+$3*scale)}' | \
+	    gawk '{printf("%.7e %.7e %.7e\n",$1,$2,$3)}END{}'
+    else
+	grd2xyz tmp.$$.grd | \
+	    gawk -v zl=$z_level -v scale=$extrude '{print($1,$2,zl+$3*scale)}' | \
+	    asciifloat2bebin 2> /dev/null
+    fi
+    rm tmp.$$.grd
+fi
+
+

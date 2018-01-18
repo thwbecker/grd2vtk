@@ -1,0 +1,129 @@
+head	1.1;
+access;
+symbols;
+locks
+	twb:1.1; strict;
+comment	@# @;
+
+
+1.1
+date	2018.01.18.14.42.06;	author twb;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@COMMENTS FOR GRD2VTK AND GRD2VTK_CART AND OTHER VTK RELATED AWK SCRIPTS
+
+source: http://www-udc.ig.utexas.edu/external/becker/software/grd2vtk.tgz
+
+author: thorsten becker, UT Austin, thwbecker@@post.harvard.edu
+
+contains code by Christian Moder - LMU, and "sphere" by Jon Leech
+
+license: gnu public license, no guarantees whatsoever. 
+
+WARNING: research code, not well documented nor tested
+
+$Id: grd2vtk_README,v 1.1 2018/01/18 14:32:13 twb Exp twb $
+
+
+Contains grd2vtk, grd2vtk_cart and a bunch of awk scripts
+
+- gmtpoly2vtk.awk: converts GMT -m polygons to VTK
+- hypo2vtk.awk: converts lon-lat-z-mag eq data to spheres in VTK
+- vtk_make_beachball.awk: make VTK beach ball - from Christian Moder
+- lonlatvevn2vtk.awk: converts ve vn velocities to VTK vectors
+
+- grd2vtk and grd2vtk_cart 
+
+
+PURPOSE: convert single or a set of "3D" GMT/netcdf grd files to
+	 (e.g. paraview) VTK format
+
+grd2vtk operates on geographic coordinate system, using global or
+	regional grd files. For global grids, it extracts
+	triangular/wedge elements at a given refinement using "sphere"
+	tesselation of the sphere. For regional grids, it uses
+	irregular hexahedrons.
+
+grd2vtk_cart uses Cartesian, regular grids and creates a rectilinear VTK object
+
+INSTALL: 1) unpack tar file
+
+	 2) place .awk scripts into your $AWKPATH/
+
+	 3) place scripts 
+
+	 grd2vtk grd2reg grd2inc oneline grd2max grd2absmax lc grd2nx grd2ny
+
+	 into your script directory (in your $PATH), and make executable 
+
+	 4) type "make" to compile helpers programs
+
+	 asciiint2bebin asciifloat2bebin sphere
+
+	 and place those in your $PATH
+
+	 The first two are for converting integers and floats to big
+	 endian binary format, the latter generates a spherical
+	 tesselation and is copyright by Jon Leech (leech @@
+	 cs.unc.edu)
+	 
+	 5) read and modify the main grd2vtk and grd2vtk_cart scripts
+	    to adjust for the usage of the "sphere" output. the script
+	    assumes you have a bunch of sphere produced coordinates
+	    stored in files already.
+
+USAGE: grd2vtk globaltopo.grd  OR grd2vtk_cart dv
+
+       see script comments and source for options
+
+
+1) grd2vtk 
+
+For global grids, the grd2vtk script uses "sphere" by Jon Leech to
+generate a set of triangular elements on the surface of the sphere and
+then GMT grdtrack to extract scalars from the grd files. For regional
+grids, irregular hexes are extracted. Both data sets are then
+converted into vtk (either POLYDATA for a single grd, or
+UNSTRUCTURED_GRID for a set of 3D levels), making output binary big
+endian (small C programs to do that are included) or ascii.
+
+the idea is that the grd files are geographic but removing -fg in the
+script should fix the global aspect. this script appears to work for
+global topography, e.g., or regional and global seismic tomography.
+
+if GMT is installed properly, the script also produces a VTK version
+of a coast line file.
+
+2) grd2vtk_cart
+
+the grd2vtk_cart script relaxes the geographic assumption, and assumes
+that the grd files are Cartesian and creates a rectilinear vtk
+grid. it only works for sets of grds, not a single grid.
+
+please read through the scripts to work out what they do, i don't have
+time right now to make this more user-friendly and documented. the
+script will have to be modified wrt. to the location of sphere's
+output, or the file I/O has to be replaced with a call to sphere on
+the fly.
+
+if anyone finds this useful and fixes bugs or adds documentation, i'd
+appreciate an updated version.
+
+hope this is helpful
+
+thorsten
+
+01/18/18
+
+@
