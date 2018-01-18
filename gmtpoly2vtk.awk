@@ -22,7 +22,7 @@
 # will create a coastline VTK file
 #
 #
-# Thorsten Becker, USC
+# Thorsten Becker, UT Austin
 # thorstinski@gmail.com
 #
 # $Id: gmtpoly2vtk.awk,v 1.2 2008/10/16 15:51:22 becker Exp becker $
