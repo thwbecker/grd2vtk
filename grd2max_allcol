@@ -1,0 +1,20 @@
+#!/bin/bash
+grid=${1-tmp.grd}
+if [ ! -s $grid ];then
+    echo $0: cannot find $grid > /dev/stderr
+    exit
+fi
+nx=`grd2nx $grid`
+grd2xyz $grid | \
+    gawk -v nx=$nx 'BEGIN{for(i=1;i<=nx;i++)max[i]=-1e30;
+                i=0;
+                }{
+                i++;
+                if(NR<=nx){x[i]=$1;}
+                if($3>max[i]){max[i]=$3;ymax[i]=$2;}
+                if(i==nx)i=0;
+                }END{
+                 for(i=1;i<=nx;i++){
+                  print(x[i],ymax[i],max[i]);
+                 }
+                }'

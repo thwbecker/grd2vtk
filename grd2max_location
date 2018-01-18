@@ -14,7 +14,7 @@ else
     fi
 fi
 
-gmtset D_FORMAT %22.15e
 
-echo `grdinfo -L0 -C $name | gawk '{print($7)}'`
-gmtset D_FORMAT %lg
+# max location
+echo `grdinfo -M -C $name | gawk '{print($14,$15)}'`
+

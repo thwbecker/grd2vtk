@@ -11,15 +11,16 @@ cp grd2vtk grd2vtk_cart grd2reg grd2inc oneline grd2nx grd2global \
 cp makefile $odir/
 cp README LICENSE $odir/
 
-cp README $HOME/public_html/software/grd2vtk_README
 
 cd $HOME/tmp/
 
 tar --create --verbose --gzip --file grd2vtk.tgz grd2vtk/
 
-mv grd2vtk.tgz $HOME/public_html/software/
+mv grd2vtk.tgz $HOME/progs/src/grd2vtk/
 
 cd -
 
 rm -fr $odir
 
+git commit
+git push

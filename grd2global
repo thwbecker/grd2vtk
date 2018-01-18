@@ -1,1 +1,11 @@
-../../batch/grd2global
+#!/bin/bash
+#
+# detect if a grid file is global
+#
+file=${1-tmp.grd}
+if [ ! -s $file ];then
+    echo $0: input file $file not found > "/dev/stderr"
+    exit
+fi
+grdinfo -C $file | gawk '{x=$2;y=$3;s=$4;n=$5;dx=$8;dy=$9;\
+                          if(((y-x) >= 360-dx)&&(s<=-90+dy)&&(n>=90-dy))print(1);else print(0)}'

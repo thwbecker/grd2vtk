@@ -1,8 +1,5 @@
 #!/bin/bash
-if [ $# -ne 1 ]; then
-    echo $0 file
-    exit
-fi
+
 if [ -s $1 ];then
     name=$1
 else
@@ -14,7 +11,7 @@ else
     fi
 fi
 
-gmtset D_FORMAT %22.15e
 
-echo `grdinfo -L0 -C $name | gawk '{print($7)}'`
-gmtset D_FORMAT %lg
+echo `grdinfo -C $name | gawk '{printf("%g",$8)}' `
+
+

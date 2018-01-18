@@ -1,1 +1,36 @@
-../../batch/grd2inc
+#!/bin/bash
+#
+# obtain increments from GMT grd file
+# $Id: grd2inc,v 1.1 2002-10-21 16:48:10-07 tbecker Exp $
+#
+mode=${2-1}			# 1: -I/ format 2: just x 3: just y 
+
+tmpd=/tmp/$USER.$HOST.$$.cfg_xxx_2
+mkdir $tmpd/
+trap "rm -r $tmpd ; exit" 0 1 2 15
+
+if [ -s $1 ];then
+    name=$1
+else
+    if [ -s $1.grd ];then
+	name=$1.grd
+    else
+	echo $1 or $1.grd are nonexistent.
+	exit
+    fi
+fi
+cp $name $tmpd
+sname=`basename $name`
+
+cd $tmpd
+gmtset D_FORMAT %22.15e
+
+if [ $mode -eq 1 ];then
+    echo `grdinfo -C $sname | gawk '{printf("-I%022.15e/%022.15e",$8,$9)}' `
+elif [ $mode -eq 2 ];then
+    echo `grdinfo -C $sname | gawk '{printf("%g",$8)}' `
+else
+    echo `grdinfo -C $sname | gawk '{printf("%g",$9)}' `
+fi
+
+gmtset D_FORMAT %lg

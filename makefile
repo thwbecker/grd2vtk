@@ -6,6 +6,9 @@ ODIR = objects/$(ARCH)/
 
 all: dirs $(BDIR)/asciiint2bebin $(BDIR)/asciifloat2bebin $(BDIR)/sphere
 
+clean:
+	rm $(ODIR)/*
+
 dirs:
 	if [ ! -s $(ODIR) ];then\
 		mkdir -p $(ODIR); \

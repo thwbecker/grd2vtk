@@ -1,1 +1,26 @@
-../../batch/grd2absmax
+#!/bin/bash
+#
+# find the abs(max(grd))
+#
+if [ $# -ne 1 ]; then
+    echo usage: $0 file > "/dev/stderr"
+    exit
+fi
+if [ -s $1 ];then
+    name=$1
+else
+    if [ -s $1.grd ];then
+	name=$1.grd
+    else
+	echo $1 or $1.grd are nonexistent. > "/dev/stderr"
+	exit
+    fi
+fi
+gmtset D_FORMAT %20.15e
+grdinfo -L0 -C $name | gawk '{print($6,$7)}' > tmp.$$
+read min max < tmp.$$; rm tmp.$$
+echo $min $max | \
+    gawk '{x=$1;if(x<0)x=-x;y=$2;if(y<0)y=-y;if(x>y)print(x);else print(y)}'
+
+gmtset D_FORMAT %lg
+

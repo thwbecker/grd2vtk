@@ -1,0 +1,4 @@
+#!/bin/bash
+grid=${1-tmp.grd}
+igf
+nx=`grd2nx $grid`

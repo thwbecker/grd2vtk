@@ -1,1 +1,52 @@
-../../batch/grd2reg
+#!/bin/bash
+#
+# determine geoegraphic range of grd file for GMT
+# $Id: grd2reg,v 1.2 2004/04/13 18:06:29 becker Exp becker $
+#
+tmpd=/tmp/$USER.$HOST.$$.cfg_xxx
+mkdir $tmpd/
+trap "rm -r $tmpd ; exit" 0 1 2  15
+if [ $# -ne 1 ];then
+    echo $0: usage > "/dev/stderr"
+    echo $0 tmp.grd > "/dev/stderr"
+    echo  > "/dev/stderr"
+    exit
+fi
+
+if [ -s $1 ];then
+    name=$1
+else
+    if [ -s $1.grd ];then
+	name=$1.grd
+    else
+	echo $1 or $1.grd are nonexistent.
+	exit
+    fi
+fi
+sname=`basename $name`
+
+cp $name $tmpd
+
+cd $tmpd
+
+#grdinfo $name > /dev/stderr
+gmtset D_FORMAT %22.15e
+
+if [ $# -gt 1 ]
+then
+    if [ $2 -eq 1 ]
+    then
+	xmin=$3
+	xmax=$4
+	ymin=$5
+	ymax=$6
+	echo -R$xmin/$xmax/$ymin/$ymax
+    else
+	echo `grdinfo -L0 -C $sname | gawk '{printf("-R%022.15e/%022.15e/%022.15e/%022.15e",$2,$3,$4,$5)}'`
+    fi
+else	
+    echo `grdinfo -L0 -C $sname | gawk '{printf("-R%022.15e/%022.15e/%022.15e/%022.15e",$2,$3,$4,$5)}'`
+fi
+
+gmtset D_FORMAT %lg
+

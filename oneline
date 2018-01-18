@@ -1,1 +1,26 @@
-../../batch/oneline
+#!/bin/bash
+#
+# prints one line out of a file
+#
+# usage:
+#
+# oneline line_number filename
+#
+# $Id: oneline,v 1.2 2003/10/30 14:45:54 becker Exp becker $
+#
+#
+if [ $# -eq 2 ]
+then
+    n=$1
+
+    if [ -s $2 ];then
+	head -$n $2 | tail -1 
+    else
+	echo $0: can not find file $2 > "/dev/stderr"
+	exit
+    fi
+else
+    echo $0: usage:
+    echo $0: $0 line_nr file
+    exit
+fi
