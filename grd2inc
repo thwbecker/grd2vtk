@@ -26,7 +26,7 @@ cd $tmpd
 gmtset D_FORMAT %22.15e
 
 if [ $mode -eq 1 ];then
-    echo `grdinfo -C $sname | gawk '{printf("-I%022.15e/%022.15e",$8,$9)}' `
+    echo `grdinfo -C $sname | gawk '{printf("-I%012.7e/%012.7e",$8,$9)}' `
 elif [ $mode -eq 2 ];then
     echo `grdinfo -C $sname | gawk '{printf("%g",$8)}' `
 else
