@@ -23,10 +23,8 @@ fi
 tmpd=`mktemp -d`
 trap "rm -rf $tmpd ; exit" 0 1 2 15
 
-sname=`basename $name`
-dirname=`dirname $name`
-owd=`pwd`
+fname=`readlink -f $name`
 
 cd $tmpd
 
-grdinfo -L0 -C $owd/$dirname/$sname | gawk '{print($2,$3,$4,$5)}'
+grdinfo -L0 -C $fname | gawk '{printf("-R%s/%s/%s/%s",$2,$3,$4,$5)}'
