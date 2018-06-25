@@ -146,18 +146,18 @@ if [ $threed -eq 0 ];then	# 2D mode
 		mv $tmpn.dat $tmpn.lonlat
 		echo $0: selected `lc $tmpn.lonlat` points, need at least one node in continent > /dev/stderr
 	    fi
-	    # resample
-	    nlat2=`lc $tmpn.lonlat`
-	    grdtrack -Ql  $tmpn.lonlat -G$tmpn.grd -fg  > $tmpn.1.lonlatz
-	    nfound=`lc $tmpn.1.lonlatz`
-	    ((ntupel=nfound/3))
+	fi
+	# resample
+	nlat2=`lc $tmpn.lonlat`
+	grdtrack -Ql  $tmpn.lonlat -G$tmpn.grd -fg  > $tmpn.1.lonlatz
+	nfound=`lc $tmpn.1.lonlatz`
+	((ntupel=nfound/3))
 
-	    echo $0: found $nfound out of new $nlat2, ntupel $ntupel
-	    if [[ $nlat2 -ne $nfound || `echo $nlat2 | gawk '{if(($1)%3 != 0)print(1);else print(0)}'` -eq 1 ]];then
-		echo $0: error nlat2 $nlat2 nfound $nfound nlat2-div3 `echo $nlat2 | gawk '{print(($1)%3)}'`
-		exit
-	    fi
-	fi	
+	echo $0: found $nfound out of new $nlat2, ntupel $ntupel
+	if [[ $nlat2 -ne $nfound || `echo $nlat2 | gawk '{if(($1)%3 != 0)print(1);else print(0)}'` -eq 1 ]];then
+	    echo $0: error nlat2 $nlat2 nfound $nfound nlat2-div3 `echo $nlat2 | gawk '{print(($1)%3)}'`
+	    exit
+	fi
     else			# regional mode
 	grd2xyz $tmpn.grd > $tmpn.1.lonlatz
     fi
