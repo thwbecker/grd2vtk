@@ -24,13 +24,14 @@ else
     fi
 fi
 sname=`basename $name`
-
-cp $name $tmpd
+owd=`pwd`
 
 cd $tmpd
+ln -s $owd/$sname $sname
+
 
 #grdinfo $name > /dev/stderr
-gmtset D_FORMAT %22.15e
+gmtset D_FORMAT %22.14e
 
 if [ $# -gt 1 ]
 then
@@ -42,10 +43,10 @@ then
 	ymax=$6
 	echo -R$xmin/$xmax/$ymin/$ymax
     else
-	echo `grdinfo -L0 -C $sname | gawk '{printf("-R%022.15e/%022.15e/%022.15e/%022.15e",$2,$3,$4,$5)}'`
+	echo `grdinfo -L0 -C $sname | gawk '{print($2,$3,$4,$5)}'`
     fi
 else	
-    echo `grdinfo -L0 -C $sname | gawk '{printf("-R%022.15e/%022.15e/%022.15e/%022.15e",$2,$3,$4,$5)}'`
+    echo `grdinfo -L0 -C $sname | gawk '{print($2,$3,$4,$5)}'`
 fi
 
 gmtset D_FORMAT %lg

@@ -29,7 +29,7 @@
 grd=${1-tmp}			# filename tmp.grd, or tmp.i.grd for 3-D
 topo=${2-0}			# 0: no topo 1: topo 2: topo, select > 0 values only 3: topo, select continental area only
 threed=${3-0}			# do we have several files?
-default_z=${4-0}			# def ault depth for a single layer, 0 = surface
+default_z=${4-0}			# def ault depth for a single layer, 0 = surface, in km
 pcore=${5-0}			        # 0: don't move 1: project to core 2: move to 1000 km 3: shift to 6371km
                                         # 4: project to core and scale to meters
 sorder=${6-7}			# sphere point order for interpolation, use 8 for velocity
@@ -108,30 +108,60 @@ if [ $threed -eq 0 ];then	# 2D mode
 	  #  exit
 	#fi
 	#zcat $datadir/sphere_points/points.$sorder.lonlat.gz > $tmpn.lonlat
-	sphere -i -c $sorder | gawk -f xyz2lonlat.awk | gawk '{printf("%.8e %.8e\n",$1,$2)}' > $tmpn.lonlat
-	if [ $topo -eq 2 ];then
-	    # select those with values > 0 only
-	    echo $0: only positive topo, starting out with `lc $tmpn.lonlat` points > /dev/stderr
-	    grdtrack -Ql $tmpn.lonlat -G$tmpn.grd -fg | \
-		gawk '{n++;if(n==4){j=0;for(i=1;i<=3;i++)if(z[i]>0)j++;if(j>1)for(i=1;i<=3;i++)print(x[i],y[i],z[i]);n=1;}x[n]=$1;y[n]=$2;z[n]=$3;}END{for(i=1;i<=3;i++)if(z[i]>0)j++;if(j>1)for(i=1;i<=3;i++)print(x[i],y[i],z[i])}' > $tmpn.dat
-	    mv $tmpn.dat $tmpn.lonlat
-	    echo $0: selected `lc $tmpn.lonlat` points, need at least two nodes positive > /dev/stderr
-	elif [ $topo -eq 3 ];then # only continent
-	    echo $0: only continental topo, starting out with `lc $tmpn.lonlat` points > /dev/stderr
-	    grdtrack -Ql  $tmpn.lonlat -G$datadir/crust/3smac_derived/continent.0.25.grd -fg -Z | gawk '{if($1>.5)print(1);else print(0)}' > $tmpn.cont
-	    grdtrack -Ql  $tmpn.lonlat -G$tmpn.grd -fg  > $tmpn.tt 
-	    paste $tmpn.tt $tmpn.cont | \
-		gawk '{n++;if(n==4){j=0;for(i=1;i<=3;i++)if(c[i])j++;if(j>1)for(i=1;i<=3;i++)print(x[i],y[i],z[i]);n=1;}x[n]=$1;y[n]=$2;z[n]=$3;c[n]=$4;}END{for(i=1;i<=3;i++)if(z[i]>0)j++;if(j>1)for(i=1;i<=3;i++)print(x[i],y[i],z[i])}' > $tmpn.dat
+	# 
+	sphere -i -c $sorder | gawk -f xyz2lonlat.awk | gawk '{x=$1;y=$2;if(y==-90)y=-89.999;printf("%.7e %.7e\n",x,y)}' > $tmpn.lonlat
+
+
+	if [ $topo -gt 1 ];then
+	    # select those with values > 0 only or continents
 	    
-	    mv $tmpn.dat $tmpn.lonlat
-	    echo $0: selected `lc $tmpn.lonlat` points, need at least two nodes positive > /dev/stderr
-	fi
-    # resample
-	grdtrack -Ql  $tmpn.lonlat -G$tmpn.grd -fg  > $tmpn.1.lonlatz
-	echo $0: found `grep NaN $tmpn.1.lonlatz | lc` NaN entries
+	    nlat1=`lc $tmpn.lonlat`
+	    echo $0: only positive or continental topo, starting out with $nlat1 points > /dev/stderr
+	    if [ $topo -eq 2 ];then
+		grdtrack -Ql  $tmpn.lonlat -G$tmpn.grd -fg > $tmpn.lonlatz
+		#grdtrack -Qn $tmpn.lonlat -G$tmpn.grd -fg > $tmpn.lonlatz
+	    elif [ $topo -eq 3 ];then
+		grdtrack -Ql $tmpn.lonlat -G$datadir/crust/3smac_derived/continent.0.25.grd -fg  | gawk '{if($3>.5)print($1,$2,1);else print($1,$2,0)}' > $tmpn.lonlatz
+	    else
+		echo $0: topo mode error $topo
+		exit
+	    fi
+	    nex=`lc $tmpn.lonlatz`
+	    if [ $nex -ne $nlat1 ];then
+		echo $0: mismatch nex $nex norig $nlat1 for topo mode $topo
+		echo $0: has to match because tupels of three
+		minmax $tmpn.lonlat
+		#gawk '{printf("%10.7f %10.7f\n",$1,$2)}' $tmpn.lonlat > tmp.1
+		#gawk '{printf("%10.7f %10.7f\n",$1,$2)}' $tmpn.lonlatz > tmp.2
+		grdinfo $tmpn.grd
+		exit
+	    fi
+	    if [ $topo -eq 2 ];then
+		gawk '{n++;if(n==4){j=0;for(i=1;i<=3;i++)if(z[i]>0)j++;if(j>0)for(i=1;i<=3;i++)print(x[i],y[i],z[i]);n=1;}x[n]=$1;y[n]=$2;z[n]=$3;}END{for(i=1;i<=3;i++)if(z[i]>0)j++;if(j>0)for(i=1;i<=3;i++)print(x[i],y[i],z[i])}' $tmpn.lonlatz > $tmpn.dat
+		mv $tmpn.dat $tmpn.lonlat
+		echo $0: selected `lc $tmpn.lonlat` points, need at least one nodes positive topo > /dev/stderr
+	    elif [ $topo -eq 3 ];then # only continent
+		gawk '{n++;if(n==4){j=0;for(i=1;i<=3;i++)if(c[i])j++;if(j>0)for(i=1;i<=3;i++)print(x[i],y[i],z[i]);n=1;}x[n]=$1;y[n]=$2;z[n]=$3;c[n]=$4;}END{for(i=1;i<=3;i++)if(z[i]>0)j++;if(j>0)for(i=1;i<=3;i++)print(x[i],y[i],z[i])}' $tmpn.lonlatz > $tmpn.dat
+	    
+		mv $tmpn.dat $tmpn.lonlat
+		echo $0: selected `lc $tmpn.lonlat` points, need at least one node in continent > /dev/stderr
+	    fi
+	    # resample
+	    nlat2=`lc $tmpn.lonlat`
+	    grdtrack -Ql  $tmpn.lonlat -G$tmpn.grd -fg  > $tmpn.1.lonlatz
+	    nfound=`lc $tmpn.1.lonlatz`
+	    ((ntupel=nfound/3))
+
+	    echo $0: found $nfound out of new $nlat2, ntupel $ntupel
+	    if [[ $nlat2 -ne $nfound || `echo $nlat2 | gawk '{if(($1)%3 != 0)print(1);else print(0)}'` -eq 1 ]];then
+		echo $0: error nlat2 $nlat2 nfound $nfound nlat2-div3 `echo $nlat2 | gawk '{print(($1)%3)}'`
+		exit
+	    fi
+	fi	
     else			# regional mode
 	grd2xyz $tmpn.grd > $tmpn.1.lonlatz
     fi
+
     echo $default_z >> $tmpn.z 
 else
     #
@@ -233,7 +263,8 @@ else
 		    done
 		    n1=`lc $tmpn.vp`
 		    if [[ $n1 -ne `lc $tmpn.vr` || $n1 -ne `lc $tmpn.vt` ]];then
-			echo $0: error, mismatch for velocity components  > /dev/stderr
+			echo $0: error, mismatch for velocity components  `lc $tmpn.vr` `lc $tmpn.vt` $n1  `zcat $tmpn.lonlati.gz | lc` > /dev/stderr
+			zcat $tmpn.lonlati.gz | minmax 
 			exit
 		    fi
 		    paste $tmpn.vr $tmpn.vt $tmpn.vp | gawk '{print($1,$2,$3,$6,$9)}' |  \
@@ -601,6 +632,7 @@ nsum_scalar=$nsum
 echo $0: total scalars $nsum_scalar
 if [ $nsum_scalar -ne $nsum_nodes ];then
     echo $0: error, node number mismatch
+    
     exit
 fi
 
@@ -622,9 +654,9 @@ if [ $add_vel -eq 1 ];then
 	((i=i+1))
     done
     nsum_vel=$nsum
-    echo $0: total velocities $nsum_vel
+    echo $0: total velocities $nsum_vel 
     if [ $nsum_vel -ne $nsum_nodes ];then
-	echo $0: error, node number mismatch
+	echo $0: error, node number mismatch $nsum_nodes
 	exit
     fi
 fi
