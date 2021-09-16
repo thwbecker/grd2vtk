@@ -14,10 +14,11 @@
 #
 # are given, will use the specified radius
 #
+# if no_proj=1, will use lon-lat-0 as coordinates
 #
 # USAGE EXAMPLE:
 #
-# pscoast -Dc -A50000 -Rg -W1 -M | gawk -f ~/awk/gmtpoly2vtk.awk > coast.vtk
+# pscoast -Dc -A50000 -Rg -W1 -m | gawk -f ~/awk/gmtpoly2vtk.awk > coast.vtk
 # 
 # will create a coastline VTK file
 #
@@ -59,34 +60,44 @@ BEGIN{
       }
     }else{
 # new point
-      lambda=$2*f;
-      phi=$1*f;
-      if(NF>2){			# r specified
-	  if(is_depth)
-	      r = (1-$3/6371);	# third column is 
-	  else
-	      r = $3;
-	  tmp=cos(lambda) * r;	# 
-
-      }else{			# no z
-	r = R;
-	tmp=cos(lambda);
-      }
-      
       np++;
       nseg++;
-      x[np]=tmp * cos(phi);
-      y[np]=tmp * sin(phi);
-      z[np]=sin(lambda)*r;
+      
+      if(no_proj){
+	  x[np] = $1;
+	  y[np] = $2;
+	  if(NF>2){
+	      if(is_depth)
+		  z[np] = (1-$3/6371);
+	      else
+		  z[np] = $3;
+	  }else{
+	      z[np] = 0;
+	  }
+      }else{
+	  lambda=$2*f;
+	  phi=$1*f;
+	  if(NF>2){			# r specified
+	      if(is_depth)
+		  r = (1-$3/6371);	# third column is 
+	      else
+		  r = $3;
+	      tmp=cos(lambda) * r;	# 
+	      
+	  }else{			# no z
+	      r = R;
+	      tmp=cos(lambda);
+	  }
+	  x[np]=tmp * cos(phi);
+	  y[np]=tmp * sin(phi);
+	  z[np]=sin(lambda)*r;
+      }
       if(NF>3){			# attribute
 	  a[np] = $4;
 	  use_attribute=1;
       }
-
     }
   }
-
-
 }
 END{
   print("# vtk DataFile Version 4.0");
@@ -96,7 +107,7 @@ END{
   print("POINTS",np,"float")
   for(i=1;i<=np;i++)
     printf("%.6e %.6e %.6e\n",x[i],y[i],z[i]);
-  print("");
+# print("");
   if(use_attribute){
       print("POINT_DATA ",np)
       print("SCALARS attribute float 1")
