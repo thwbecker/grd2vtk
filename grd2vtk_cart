@@ -2,7 +2,7 @@
 #
 # if 3D is set: 
 # given a set of equal geometry grd files describing a 3D scalar in
-# cartesian, create a rectilinear vtk file. 
+# cartesian, create a rectilinear vtk file (not projected, grd2vtk projects)
 #
 # else, just one layer
 # 
@@ -55,17 +55,19 @@ if [ `echo $extrude | gawk '{if($1!=0)print(1);else print(0)}'` -eq 0 ];then
     echo DIMENSIONS $nx $ny $nz
     echo X_COORDINATES $nx float
     if [ $ascii -eq 1 ];then
-	grd2xyz $master_file.grd | gawk '{print($1)}' | sort -n | \
+	grd2xyz $master_file.grd | gawk '{print($1)}' | sort -g | \
 	    uniq | gawk '{printf("%.7e ",$1)}END{printf("\n")}'
     else
-	grd2xyz $master_file.grd | gawk '{print($1)}' | sort -n | \
+	grd2xyz $master_file.grd | gawk '{print($1)}' | sort -g | \
 	    uniq | gawk '{print($1)}' | asciifloat2bebin 2> /dev/null
     fi
     echo Y_COORDINATES $ny float
     if [ $ascii -eq 1 ];then
-	grd2xyz $master_file.grd | gawk '{print($2)}' | sort -n | uniq | gawk '{printf("%.7e ",$1)}END{printf("\n")}'
+	grd2xyz $master_file.grd | gawk '{print($2)}' | sort -g | \
+	    uniq | gawk '{printf("%.7e ",$1)}END{printf("\n")}'
     else
-	grd2xyz $master_file.grd | gawk '{print($2)}' | sort -n | uniq | gawk '{print($1)}' | asciifloat2bebin 2> /dev/null
+	grd2xyz $master_file.grd | gawk '{print($2)}' | sort -g | \
+	    uniq | gawk '{print($1)}' | asciifloat2bebin 2> /dev/null
     fi
     echo Z_COORDINATES $nz float 
     if [ $is_3d -eq 1 ];then

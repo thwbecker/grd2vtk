@@ -71,9 +71,6 @@ BEGIN{
 		    print(x,$3,r);
 		if(divide)print(">");
 		
-	
-		
-
 	    }
 	}
 	# box sides

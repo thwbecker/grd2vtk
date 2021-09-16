@@ -16,9 +16,6 @@
 # several grid files also require a file called $dfile with depth layers, sorted bottom up, counting 
 # depth (in km for earth) positive (e.g. 2800 2000 1000 500 0 for five layers in the mantle, bottom up)
 #
-# 
-#
-#
 # thorsten becker, thwbecker@post.harvard.edu
 #
 #
@@ -109,7 +106,8 @@ if [ $threed -eq 0 ];then	# 2D mode
 	#fi
 	#zcat $datadir/sphere_points/points.$sorder.lonlat.gz > $tmpn.lonlat
 	# 
-	sphere -i -c $sorder | gawk -f xyz2lonlat.awk | gawk '{x=$1;y=$2;if(y==-90)y=-89.999;printf("%.7e %.7e\n",x,y)}' > $tmpn.lonlat
+	sphere -i -c $sorder | gawk -f xyz2lonlat.awk | \
+	    gawk '{x=$1;y=$2;if(y==-90)y=-89.999;printf("%.7e %.7e\n",x,y)}' > $tmpn.lonlat
 
 
 	if [ $topo -gt 1 ];then

@@ -3,28 +3,33 @@
 # determine geoegraphic range of grd file for GMT
 # $Id: grd2reg,v 1.2 2004/04/13 18:06:29 becker Exp becker $
 #
-if [ $# -ne 1 ];then
+if [ $# -lt 1 ];then
     echo $0: usage > "/dev/stderr"
-    echo $0 tmp.grd > "/dev/stderr"
+    echo $0 tmp.grd [mode, 1]> "/dev/stderr"
     echo  > "/dev/stderr"
     exit
 fi
-
+mode=${2-1}			# 1: -R version 2: w e s n
 if [ -s $1 ];then
     name=$1
 else
     if [ -s $1.grd ];then
 	name=$1.grd
     else
-	echo $1 or $1.grd are nonexistent.
+	echo $1 or $1.grd are nonexistent. > "/dev/stderr"
 	exit
     fi
 fi
-tmpd=`mktemp -d`
-trap "rm -rf $tmpd ; exit" 0 1 2 15
+#tmpd=`mktemp -d`
+#trap "rm -rf $tmpd ; exit" 0 1 2 15
 
-fname=`readlink -f $name`
+#fname=`readlink -f $name`
 
-cd $tmpd
-
-grdinfo -L0 -C $fname | gawk '{printf("-R%s/%s/%s/%s",$2,$3,$4,$5)}'
+#cd $tmpd
+if [ $mode -eq 1 ];then
+    #grdinfo -L0 -C $name | gawk '{printf("-R%s/%s/%s/%s\n",$2,$3,$4,$5)}'
+    grdinfo  -C $name | gawk '{printf("-R%s/%s/%s/%s\n",$2,$3,$4,$5)}'
+else
+    #grdinfo -L0 -C $name | gawk '{printf("%s %s %s %s\n",$2,$3,$4,$5)}'
+    grdinfo  -C $name | gawk '{printf("%s %s %s %s\n",$2,$3,$4,$5)}'
+fi
