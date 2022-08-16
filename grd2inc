@@ -18,7 +18,7 @@ cp $name $tmpd
 sname=`basename $name`
 
 cd $tmpd
-gmtset D_FORMAT %22.15e
+gmtset FORMAT_FLOAT_OUT %22.15e
 
 if [ $mode -eq 1 ];then
     echo `grdinfo -C $sname | gawk '{printf("-I%012.7e/%012.7e",$8,$9)}' `
@@ -30,4 +30,5 @@ elif [ $mode -eq 4 ];then
     echo `grdinfo -C $sname | gawk '{printf("%g %g",$8,$9)}' `
 fi
 
-gmtset D_FORMAT %lg
+gmtset FORMAT_FLOAT_OUT %lg
+#rm -r $tmpd &

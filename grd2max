@@ -14,7 +14,7 @@ else
     fi
 fi
 
-#gmtset D_FORMAT %22.15e
-
+#gmtset FORMAT_FLOAT_OUT %22.15e
+#which grdinfo
 echo `grdinfo -L0 -C $name | gawk '{print($7)}'`
-#gmtset D_FORMAT %lg
+#gmtset FORMAT_FLOAT_OUT %lg

@@ -16,11 +16,11 @@ else
 	exit
     fi
 fi
-gmtset D_FORMAT %20.15e
+gmtset FORMAT_FLOAT_OUT %20.15e
 grdinfo -L0 -C $name | gawk '{print($6,$7)}' > tmp.$$
 read min max < tmp.$$; rm tmp.$$
 echo $min $max | \
     gawk '{x=$1;if(x<0)x=-x;y=$2;if(y<0)y=-y;if(x>y)print(x);else print(y)}'
 
-gmtset D_FORMAT %lg
+gmtset FORMAT_FLOAT_OUT %lg
 
