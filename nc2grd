@@ -1,0 +1,184 @@
+#!/bin/bash
+#
+# extract netcdf grd files from an .nc file providing a 3-D grid, like seismic tomography models
+# using python3/netcdf tools, for use with GMT as slices
+# thwbecker@post.harvar.edu
+#
+# uses lc, min.awk, max.awk, tocolumn.awk
+#
+fnc=${1-tmp}			# nc file, without .nc ending
+nexvar=${2-1}			# which variable to extract for grids?
+geo_c=${3-1}			# geographic coordinates?
+
+tmpn=`mktemp`
+trap "rm -f $tmpn*" EXIT
+
+zvar=Depth
+
+
+if [ ! -s $fnc.nc ];then
+    echo $0: $fnc.nc not found > /dev/stderr
+    exit
+fi
+# determine variables
+#ncinfo  $fnc.nc | grep "variables" | gawk '{for(i=7;i<=NF;i+=2)printf("%s\n",$i)}' | gawk '{i=match($1,"\\(");print(substr($1,1,i-1))}' | gawk -f torow.awk > $tmpn.var
+ncinfo  $fnc.nc | grep "variables" | gawk '{for(i=3;i<=NF;i+=2)printf("%s\n",$i)}'  | gawk '{i=match($1,"\\(");print(substr($1,1,i-1))}' | gawk -f torow.awk > $tmpn.var
+variables=`cat $tmpn.var`
+nvar=`echo $variables | gawk '{print(NF)}'`
+#
+echo $0: determined $nvar variables in $fnc.nc: $variables > /dev/stderr
+#
+if [[ $nexvar -lt 1 || $nexvar -gt $nvar ]];then
+    echo $0: nexvar $nexvar out of range > /dev/stderr
+    exit
+fi
+exvar=`echo $variables| gawk -v n=$nvar -v i=$nexvar '{print($(n-i+1))}'`
+#exvar=`echo $variables | gawk -v n=$nvar -v i=$nexvar '{print($(n-2+i))}'`
+echo $0: extracting variable $nexvar ie $exvar from $fnc.nc > /dev/stderr
+
+# find dimensions
+ncinfo $fnc.nc | grep dimensions | grep -v variables | gawk -v zvar=$zvar '{for(i=2;i<=NF;i++)if(match(tolower($i),zvar)||match(tolower($i),"dep")){j=match($i,"\\(");s=substr($i,j+1,length($i));j=match(s,"\\)");s=substr(s,1,j-1);}}END{if(s=="")print(1);else print(s)}' > $tmpn.n
+read nz < $tmpn.n		# 
+ncinfo $fnc.nc | grep dimensions | grep -v variables | gawk '{for(i=2;i<=NF;i++)if(match($i,"X")||match($i,"longitude")||match($i,"lon")||match($i,"Lon")){j=match($i,"\\(");s=substr($i,j+1,length($i));j=match(s,"\\)");s=substr(s,1,j-1);}}END{if(s=="")print("NaN");else print(s)}' > $tmpn.n
+read nx < $tmpn.n
+ncinfo $fnc.nc | grep dimensions | grep -v variables | gawk '{for(i=2;i<=NF;i++)if(match($i,"Y")||match($i,"latitude")||match($i,"lat")||match($i,"Lat")){j=match($i,"\\(");s=substr($i,j+1,length($i));j=match(s,"\\)");s=substr(s,1,j-1);}}END{if(s=="")print("NaN");else print(s)}' > $tmpn.n
+read ny < $tmpn.n
+
+
+echo $0: dimensions nx $nx ny $ny nz $nz
+
+if [[ "$nz" != "NaN" && $nz -gt 1 ]];then # extract depth layers
+    is_threed=1
+    for zvart in Depth depth dep;do
+	ncdump  -v $zvart $fnc.nc 2> /dev/null | \
+	    gawk -v v=$zvart '{if($1=="data:")pp=1;if(pp)if(($1==v) && ($2=="="))p=1;if(p)print($0)}' | gawk -v v=$zvart '{gsub("=","");gsub(v,"");gsub("}","");gsub(","," ");gsub(";","");print($0)}' | gawk '{for(i=1;i<=NF;i++)printf("%s ",$i)}END{printf("\n");}' > $tmpn.tmp
+	
+	ndcol=`gawk '{print(NF)}' $tmpn.tmp` 
+	if [ $ndcol -gt 1 ];then
+	    echo $0: extracted $ndcol depth levels $zvart
+	    cp $tmpn.tmp $tmpn.$zvar
+	fi
+    done
+    if [ ! -s $tmpn.$zvar ];then
+	echo $0: could not extract depths
+	exit
+    fi
+else
+
+    is_threed=0
+fi
+
+
+nsum=0
+for v in Y Lat lat latitude Latitude;do
+    ncdump  -v $v $fnc.nc 2> /dev/null | \
+	gawk -v v=$v '{if($1=="data:")p=1;else{gsub(v,"");gsub("=","");gsub("}","");gsub(","," ");gsub(";","");if(p)print($0)}}' | gawk '{for(i=1;i<=NF;i++)printf("%.3f ",$i)}END{printf("\n");}' > $tmpn.$v 
+    n=`lc $tmpn.$v`
+    if [ $n -eq 1 ];then
+	cp $tmpn.$v $tmpn.y1
+    fi
+    ((nsum=nsum+n))
+done
+if [ $nsum -ne 1 ];then
+    echo $0: error for lat $nsum > /dev/stderr
+    exit
+fi
+
+nsum=0
+for v in X Lon lon longitude Longitude;do
+    ncdump  -v $v $fnc.nc 2> /dev/null | \
+	gawk -v v=$v '{if($1=="data:")p=1;else{gsub(v,"");gsub("=","");gsub("}","");gsub(","," ");gsub(";","");if(p)print($0)}}' | gawk '{for(i=1;i<=NF;i++)printf("%.3f ",$i)}END{printf("\n");}' > $tmpn.$v 
+    n=`lc $tmpn.$v`
+    if [ $n -eq 1 ];then
+	cp $tmpn.$v $tmpn.x1
+    fi
+    ((nsum=nsum+n))
+done
+if [ $nsum -ne 1 ];then
+    echo $0: error for lon > /dev/stderr
+    exit
+fi
+
+
+xinc=`gawk '{for(i=1;i<NF;i++){n++;x+=($(i+1)-$(i));}}END{print(x/n)}' $tmpn.x1` 
+yinc=`gawk '{for(i=NF;i>1;i--){n++;x+=($(i-1)-$(i));}}END{inc=(x/n);print((inc>0)?(inc):(-inc))}' $tmpn.y1`
+gawk -f tocolumn.awk $tmpn.x1 > $tmpn.x
+gawk -f tocolumn.awk $tmpn.y1 > $tmpn.y
+
+
+xmin=`gawk -f min.awk $tmpn.x`
+ymin=`gawk -f min.awk $tmpn.y`
+xmax=`gawk -f max.awk $tmpn.x`
+ymax=`gawk -f max.awk $tmpn.y`
+reg=-R$xmin/$xmax/$ymin/$ymax
+inc=-I$xinc/$yinc
+
+echo $0: determined $reg $inc > /dev/stderr # assuming regular grid
+gawk -v fx=$tmpn.x -v fy=$tmpn.y \
+     '{if(FILENAME==fx){nx++;x[nx]=$1;}if(FILENAME==fy){ny++;y[ny]=$1;}}
+     END{for(j=1;j<=ny;j++)for(i=1;i<=nx;i++)print(x[i],y[j])}' $tmpn.x $tmpn.y > $tmpn.xy & 
+
+minmax $tmpn.xy
+k=1
+
+echo $0: extracting $exvar threed $is_threed
+
+
+#ncdump  -v $exvar $fnc.nc 2> /dev/null | gawk -v v=$exvar '{if($1=="data:")p=1;else{gsub(v,"");gsub("=","");gsub("}","");gsub(","," ");gsub(";","");if(p){print($0)}}}' | gawk '{if(NR>2)for(i=1;i<=NF;i++)printf("%s\n",$i)}' > $tmpn.$exvar 
+
+ncdump  -v $exvar $fnc.nc |  \
+    gawk -v v=$exvar '{if(($1==v)&&($2=="="))p=1;else if(p)print($0)}' | gawk '{gsub(",","");gsub(";","");gsub("{","");gsub("}","");print($0)}' | gawk '{for(i=1;i<=NF;i++)printf("%s\n",$i)}' > $tmpn.$exvar
+
+
+nc=`lc $tmpn.xy`		# number of layer coordinates
+nv=`lc $tmpn.$exvar`		# number of extracted values
+((nxyc=nx*ny))
+((nxyzc=nxyc*nz))
+echo $0: nxy $nc nxyc $nxyc nex: $nv nxyzc: $nxyzc
+
+if [ $nxyzc -ne $nv ];then
+    echo $0: extraction error  nv $nv > /dev/stderr
+    echo $0: $nxyzc $nv
+    exit
+fi
+if [ $nxyc -ne $nc ];then
+    echo $0: layer $nxyc not coordinate $nc
+    exit
+fi
+# this yie
+split --suffix-length=3 --verbose -d -l $nxyc  $tmpn.$exvar $tmpn.layer.
+#ls $tmpn.layer.*
+
+if [ $nz -gt 1 ];then
+    cat $tmpn.$zvar
+    gawk -f tocolumn.awk $tmpn.$zvar | reverse > depths.dat
+else
+    echo $0: single layer
+    echo 0 > $tmpn.$zvar
+fi
+
+
+j=$nz;i=0
+for d in `cat $tmpn.$zvar`;do
+    il=`echo $i | gawk '{printf("%03i",$1)}'`
+    
+    if [ `lc $tmpn.layer.$il` -ne $nxyc ];then
+	echo $0: layer $i  number `lc $tmpn.layer.$il` error should be $nxyc
+	exit
+    fi
+    if [ $nz -eq 1 ];then
+	gname=$fnc.$exvar.grd
+    else
+	gname=$exvar.$j.grd
+    fi
+    if [ $geo_c -eq 1 ];then
+	paste $tmpn.xy $tmpn.layer.$il | xyz2grd -fg $reg $inc  -G$gname -V
+    else
+	paste $tmpn.xy $tmpn.layer.$il | xyz2grd  $reg $inc  -G$gname -V
+    fi
+    echo $0: written to $gname for $zvar $d grid 
+    ((j=j-1))
+    ((i=i+1))
+done
+
+
